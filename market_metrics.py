@@ -16,7 +16,7 @@ session.headers.update({
 })
 # Indian index tickers on Yahoo Finance
 INDICES = {
-    "NIFTY50": "NSEI"#,
+    "NIFTY50": "nifty50.ns"#,
    # "NIFTY_NEXT50": "^NSMIDCP",
    # "NIFTY_MIDCAP150": "NIFTYMIDCAP150.NS"
 }
