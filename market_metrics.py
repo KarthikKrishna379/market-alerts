@@ -38,8 +38,8 @@ def calculate_metrics(ticker_symbol, ticker_name, days_lookback=252):
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days_lookback)
         
-        # Download with retries
-        hist = stock.history(start=start_date, end=end_date, progress=False)
+        # Download with retries (removed progress parameter)
+        hist = stock.history(start=start_date, end=end_date)
         
         if hist.empty or len(hist) == 0:
             return {"error": f"No data found for {ticker_name}", "ticker": ticker_name}
