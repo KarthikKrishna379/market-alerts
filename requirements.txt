@@ -1,4 +1,4 @@
 yfinance==0.2.32
 requests==2.31.0
-nsepython==0.2.50
+nsepython==0.0.957
 pandas==2.0.3
