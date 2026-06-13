@@ -1,159 +1,88 @@
 """
 Market metrics calculator for Indian indices
-Uses Indian Stock Market API (community API)
+Calculates: 200 DMA, 50 DMA, 52 Week High, and % differences
 For: NIFTY50, Nifty Next50, Nifty Midcap 150
 """
 
+import yfinance as yf
+from datetime import datetime, timedelta
 import requests
 import json
 import os
-from datetime import datetime
 
-# Indian Stock Market API base URL
-API_BASE = "http://65.0.104.9"
-
-# Index symbols for the API
+# Indian index tickers on Yahoo Finance
 INDICES = {
-    "NIFTY50": "NIFTY 50",
-    "NIFTY_NEXT50": "NIFTY NEXT 50",
-    "NIFTY_MIDCAP150": "NIFTY MIDCAP 150"
+    "NIFTY50": "^NSEI",
+    "NIFTY_NEXT50": "^NIFNXT50",
+    "NIFTY_MIDCAP150": "^NIFMC150"
 }
 
 
-def fetch_index_data(index_symbol):
+def calculate_metrics(ticker_symbol, ticker_name, days_lookback=252):
     """
-    Fetch index data using Indian Stock Market API
+    Calculate market metrics for a given ticker
     
     Args:
-        index_symbol (str): Index symbol (e.g., "NIFTY 50")
+        ticker_symbol (str): Yahoo Finance ticker symbol
+        ticker_name (str): Human readable name
+        days_lookback (int): Number of days to look back for calculations
         
     Returns:
-        dict: Index data or error message
+        dict: Dictionary containing all metrics
     """
     try:
-        print(f"Fetching data for {index_symbol}...")
+        print(f"Fetching data for {ticker_name} ({ticker_symbol})...")
         
-        # Construct API URL
-        url = f"{API_BASE}/stock"
+        # Fetch historical data
+        stock = yf.Ticker(ticker_symbol)
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days_lookback)
         
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+        # Download with retries (removed progress parameter)
+        hist = stock.history(start=start_date, end=end_date)
         
-        params = {
-            'symbol': index_symbol
-        }
+        if hist.empty or len(hist) == 0:
+            return {"error": f"No data found for {ticker_name}", "ticker": ticker_name}
         
-        # Make request with timeout
-        response = requests.get(url, headers=headers, params=params, timeout=15)
-        response.raise_for_status()
+        current_price = hist['Close'].iloc[-1]
         
-        data = response.json()
-        
-        # Check if data is valid
-        if data and isinstance(data, dict):
-            print(f"✓ Successfully fetched {index_symbol}")
-            return data
+        # Calculate 200-day moving average (200 DMA)
+        if len(hist) >= 200:
+            dma_200 = hist['Close'].tail(200).mean()
         else:
-            print(f"⚠ No valid data returned for {index_symbol}")
-            return {"error": f"No data found for {index_symbol}"}
-    
-    except requests.exceptions.Timeout:
-        print(f"✗ Timeout fetching {index_symbol}")
-        return {"error": f"Request timeout for {index_symbol}"}
-    except requests.exceptions.ConnectionError:
-        print(f"✗ Connection error for {index_symbol}")
-        return {"error": f"Connection error for {index_symbol}"}
-    except json.JSONDecodeError:
-        print(f"✗ Invalid JSON response for {index_symbol}")
-        return {"error": f"Invalid response for {index_symbol}"}
-    except Exception as e:
-        print(f"✗ Error for {index_symbol}: {str(e)}")
-        return {"error": str(e)}
-
-
-def calculate_metrics(index_symbol, index_display_name):
-    """
-    Calculate metrics for index using API data
-    
-    Args:
-        index_symbol (str): Index symbol for API
-        index_display_name (str): Display name
+            dma_200 = hist['Close'].mean()
         
-    Returns:
-        dict: Calculated metrics
-    """
-    try:
-        # Fetch current data
-        index_data = fetch_index_data(index_symbol)
+        # Calculate 50-day moving average (50 DMA)
+        if len(hist) >= 50:
+            dma_50 = hist['Close'].tail(50).mean()
+        else:
+            dma_50 = hist['Close'].mean()
         
-        if "error" in index_data:
-            return {"error": index_data["error"], "ticker": index_display_name}
+        # Calculate 52-week high (approximately 252 trading days)
+        week_52_high = hist['Close'].max()
         
-        # Extract metrics from API response
+        # Calculate percentage differences
+        pct_diff_200dma = ((current_price - dma_200) / dma_200) * 100
+        pct_diff_52w_high = ((current_price - week_52_high) / week_52_high) * 100
+        
         metrics = {
-            "ticker": index_display_name,
+            "ticker": ticker_name,
+            "current_price": round(current_price, 2),
+            "dma_200": round(dma_200, 2),
+            "dma_50": round(dma_50, 2),
+            "week_52_high": round(week_52_high, 2),
+            "pct_diff_200dma": round(pct_diff_200dma, 2),
+            "pct_diff_52w_high": round(pct_diff_52w_high, 2),
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S IST"),
-            "raw_data": index_data
+            "data_points": len(hist)
         }
         
-        # Current price
-        if 'currentPrice' in index_data:
-            metrics["current_price"] = float(index_data['currentPrice'])
-        elif 'price' in index_data:
-            metrics["current_price"] = float(index_data['price'])
-        else:
-            return {"error": "Could not extract price", "ticker": index_display_name}
-        
-        # 52-week high
-        if 'high52Week' in index_data:
-            metrics["week_52_high"] = float(index_data['high52Week'])
-        elif '52WeekHigh' in index_data:
-            metrics["week_52_high"] = float(index_data['52WeekHigh'])
-        
-        # 52-week low
-        if 'low52Week' in index_data:
-            metrics["week_52_low"] = float(index_data['low52Week'])
-        elif '52WeekLow' in index_data:
-            metrics["week_52_low"] = float(index_data['52WeekLow'])
-        
-        # Today's high
-        if 'dayHigh' in index_data:
-            metrics["today_high"] = float(index_data['dayHigh'])
-        elif 'high' in index_data:
-            metrics["today_high"] = float(index_data['high'])
-        
-        # Today's low
-        if 'dayLow' in index_data:
-            metrics["today_low"] = float(index_data['dayLow'])
-        elif 'low' in index_data:
-            metrics["today_low"] = float(index_data['low'])
-        
-        # Percentage change
-        if 'priceChangePercent' in index_data:
-            metrics["pct_change"] = float(index_data['priceChangePercent'])
-        elif 'percentChange' in index_data:
-            metrics["pct_change"] = float(index_data['percentChange'])
-        
-        # Open price
-        if 'open' in index_data:
-            metrics["open_price"] = float(index_data['open'])
-        
-        # Close price
-        if 'close' in index_data:
-            metrics["close_price"] = float(index_data['close'])
-        
-        # Calculate percentage from 52-week high
-        if 'current_price' in metrics and 'week_52_high' in metrics:
-            if metrics['week_52_high'] > 0:
-                pct_diff = ((metrics['current_price'] - metrics['week_52_high']) / metrics['week_52_high']) * 100
-                metrics['pct_from_52w_high'] = round(pct_diff, 2)
-        
+        print(f"✓ Successfully fetched {ticker_name}")
         return metrics
     
     except Exception as e:
-        print(f"✗ Error calculating metrics: {str(e)}")
-        return {"error": str(e), "ticker": index_display_name}
+        print(f"✗ Error for {ticker_name}: {str(e)}")
+        return {"error": str(e), "ticker": ticker_name}
 
 
 def format_message(metrics):
@@ -161,7 +90,7 @@ def format_message(metrics):
     Format metrics into a readable Telegram message
     
     Args:
-        metrics (dict): Dictionary of metrics
+        metrics (dict): Dictionary of metrics from calculate_metrics()
         
     Returns:
         str: Formatted message
@@ -169,41 +98,27 @@ def format_message(metrics):
     if "error" in metrics:
         return f"❌ Error analyzing {metrics.get('ticker', 'Unknown')}: {metrics['error']}"
     
-    # Build message with available data
-    lines = [
-        f"📊 {metrics['ticker']}",
-        "━━━━━━━━━━━━━━━━━━━━━━━━━"
-    ]
-    
-    if 'current_price' in metrics:
-        lines.append(f"💰 Current: {metrics['current_price']:.2f}")
-    
-    if 'open_price' in metrics:
-        lines.append(f"📍 Open: {metrics['open_price']:.2f}")
-    
-    if 'today_high' in metrics and 'today_low' in metrics:
-        lines.append(f"📈 High/Low: {metrics['today_high']:.2f} / {metrics['today_low']:.2f}")
-    
-    if 'pct_change' in metrics:
-        change = metrics['pct_change']
-        emoji = "🟢" if change >= 0 else "🔴"
-        lines.append(f"{emoji} Change: {change:+.2f}%")
-    
-    if 'week_52_high' in metrics:
-        lines.append(f"🎯 52W High: {metrics['week_52_high']:.2f}")
-    
-    if 'week_52_low' in metrics:
-        lines.append(f"📉 52W Low: {metrics['week_52_low']:.2f}")
-    
-    if 'pct_from_52w_high' in metrics:
-        lines.append(f"📊 vs 52W High: {metrics['pct_from_52w_high']:+.2f}%")
-    
-    lines.extend([
-        "━━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"⏰ {metrics['timestamp']}"
-    ])
-    
-    return "\n".join(lines)
+    message = f"""
+📊 Market Alert - {metrics['ticker']}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💰 Current Price: {metrics['current_price']}
+
+📈 Moving Averages:
+   • 50 DMA: {metrics['dma_50']}
+   • 200 DMA: {metrics['dma_200']}
+
+🎯 52-Week High: {metrics['week_52_high']}
+
+📊 Percentage Differences:
+   • vs 200 DMA: {metrics['pct_diff_200dma']:+.2f}%
+   • vs 52W High: {metrics['pct_diff_52w_high']:+.2f}%
+
+⏰ Updated: {metrics['timestamp']}
+📍 Data Points: {metrics['data_points']} days
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+    return message.strip()
 
 
 def send_telegram_message(message, bot_token, chat_id):
@@ -251,15 +166,14 @@ def main():
     print("=" * 50)
     
     all_messages = [
-        "🚀 Indian Market Alerts Report",
-        f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')}",
-        ""
+        "🚀 Indian Market Alerts Report\n",
+        f"📅 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')}\n"
     ]
     
     # Process each Indian index
-    for index_key, index_symbol in INDICES.items():
-        print(f"\nProcessing {index_key}...")
-        metrics = calculate_metrics(index_symbol, index_key.replace('_', ' '))
+    for ticker_name, ticker_symbol in INDICES.items():
+        print(f"\nProcessing {ticker_name}...")
+        metrics = calculate_metrics(ticker_symbol, ticker_name)
         message = format_message(metrics)
         all_messages.append(message)
     
