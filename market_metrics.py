@@ -1,6 +1,6 @@
 """
 Market metrics calculator for Indian indices
-Uses direct HTTP requests to NSE India API
+Uses Indian Stock Market API (community API)
 For: NIFTY50, Nifty Next50, Nifty Midcap 150
 """
 
@@ -9,7 +9,10 @@ import json
 import os
 from datetime import datetime
 
-# NSE India index symbols
+# Indian Stock Market API base URL
+API_BASE = "http://65.0.104.9"
+
+# Index symbols for the API
 INDICES = {
     "NIFTY50": "NIFTY 50",
     "NIFTY_NEXT50": "NIFTY NEXT 50",
@@ -17,28 +20,28 @@ INDICES = {
 }
 
 
-def fetch_nse_index_data(index_name):
+def fetch_index_data(index_symbol):
     """
-    Fetch NSE index data using NSE India's API
+    Fetch index data using Indian Stock Market API
     
     Args:
-        index_name (str): Index name (e.g., "NIFTY 50")
+        index_symbol (str): Index symbol (e.g., "NIFTY 50")
         
     Returns:
         dict: Index data or error message
     """
     try:
-        print(f"Fetching data for {index_name}...")
+        print(f"Fetching data for {index_symbol}...")
         
-        # NSE India API endpoint
-        url = "https://www.nseindia.com/api/index-data"
+        # Construct API URL
+        url = f"{API_BASE}/stock"
         
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         
         params = {
-            'index': index_name
+            'symbol': index_symbol
         }
         
         # Make request with timeout
@@ -47,33 +50,34 @@ def fetch_nse_index_data(index_name):
         
         data = response.json()
         
-        if 'data' in data and len(data['data']) > 0:
-            print(f"✓ Successfully fetched {index_name}")
-            return data['data'][0]
+        # Check if data is valid
+        if data and isinstance(data, dict):
+            print(f"✓ Successfully fetched {index_symbol}")
+            return data
         else:
-            print(f"⚠ No data returned for {index_name}")
-            return {"error": f"No data found for {index_name}"}
+            print(f"⚠ No valid data returned for {index_symbol}")
+            return {"error": f"No data found for {index_symbol}"}
     
     except requests.exceptions.Timeout:
-        print(f"✗ Timeout fetching {index_name}")
-        return {"error": f"Request timeout for {index_name}"}
+        print(f"✗ Timeout fetching {index_symbol}")
+        return {"error": f"Request timeout for {index_symbol}"}
     except requests.exceptions.ConnectionError:
-        print(f"✗ Connection error for {index_name}")
-        return {"error": f"Connection error for {index_name}"}
+        print(f"✗ Connection error for {index_symbol}")
+        return {"error": f"Connection error for {index_symbol}"}
     except json.JSONDecodeError:
-        print(f"✗ Invalid JSON response for {index_name}")
-        return {"error": f"Invalid response for {index_name}"}
+        print(f"✗ Invalid JSON response for {index_symbol}")
+        return {"error": f"Invalid response for {index_symbol}"}
     except Exception as e:
-        print(f"✗ Error for {index_name}: {str(e)}")
+        print(f"✗ Error for {index_symbol}: {str(e)}")
         return {"error": str(e)}
 
 
-def calculate_metrics(index_name, index_display_name):
+def calculate_metrics(index_symbol, index_display_name):
     """
-    Calculate metrics for NSE index using API data
+    Calculate metrics for index using API data
     
     Args:
-        index_name (str): Index name for API
+        index_symbol (str): Index symbol for API
         index_display_name (str): Display name
         
     Returns:
@@ -81,7 +85,7 @@ def calculate_metrics(index_name, index_display_name):
     """
     try:
         # Fetch current data
-        index_data = fetch_nse_index_data(index_name)
+        index_data = fetch_index_data(index_symbol)
         
         if "error" in index_data:
             return {"error": index_data["error"], "ticker": index_display_name}
@@ -90,42 +94,60 @@ def calculate_metrics(index_name, index_display_name):
         metrics = {
             "ticker": index_display_name,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S IST"),
+            "raw_data": index_data
         }
         
         # Current price
-        if 'lastPrice' in index_data:
-            metrics["current_price"] = float(index_data['lastPrice'])
+        if 'currentPrice' in index_data:
+            metrics["current_price"] = float(index_data['currentPrice'])
+        elif 'price' in index_data:
+            metrics["current_price"] = float(index_data['price'])
         else:
             return {"error": "Could not extract price", "ticker": index_display_name}
         
         # 52-week high
-        if 'week52High' in index_data:
-            metrics["week_52_high"] = float(index_data['week52High'])
+        if 'high52Week' in index_data:
+            metrics["week_52_high"] = float(index_data['high52Week'])
+        elif '52WeekHigh' in index_data:
+            metrics["week_52_high"] = float(index_data['52WeekHigh'])
         
         # 52-week low
-        if 'week52Low' in index_data:
-            metrics["week_52_low"] = float(index_data['week52Low'])
+        if 'low52Week' in index_data:
+            metrics["week_52_low"] = float(index_data['low52Week'])
+        elif '52WeekLow' in index_data:
+            metrics["week_52_low"] = float(index_data['52WeekLow'])
         
         # Today's high
-        if 'highPrice' in index_data:
-            metrics["today_high"] = float(index_data['highPrice'])
+        if 'dayHigh' in index_data:
+            metrics["today_high"] = float(index_data['dayHigh'])
+        elif 'high' in index_data:
+            metrics["today_high"] = float(index_data['high'])
         
         # Today's low
-        if 'lowPrice' in index_data:
-            metrics["today_low"] = float(index_data['lowPrice'])
+        if 'dayLow' in index_data:
+            metrics["today_low"] = float(index_data['dayLow'])
+        elif 'low' in index_data:
+            metrics["today_low"] = float(index_data['low'])
         
         # Percentage change
-        if 'perChange' in index_data:
-            metrics["pct_change"] = float(index_data['perChange'])
+        if 'priceChangePercent' in index_data:
+            metrics["pct_change"] = float(index_data['priceChangePercent'])
+        elif 'percentChange' in index_data:
+            metrics["pct_change"] = float(index_data['percentChange'])
         
         # Open price
-        if 'openPrice' in index_data:
-            metrics["open_price"] = float(index_data['openPrice'])
+        if 'open' in index_data:
+            metrics["open_price"] = float(index_data['open'])
+        
+        # Close price
+        if 'close' in index_data:
+            metrics["close_price"] = float(index_data['close'])
         
         # Calculate percentage from 52-week high
         if 'current_price' in metrics and 'week_52_high' in metrics:
-            pct_diff = ((metrics['current_price'] - metrics['week_52_high']) / metrics['week_52_high']) * 100
-            metrics['pct_from_52w_high'] = round(pct_diff, 2)
+            if metrics['week_52_high'] > 0:
+                pct_diff = ((metrics['current_price'] - metrics['week_52_high']) / metrics['week_52_high']) * 100
+                metrics['pct_from_52w_high'] = round(pct_diff, 2)
         
         return metrics
     
@@ -235,9 +257,9 @@ def main():
     ]
     
     # Process each Indian index
-    for index_key, index_name in INDICES.items():
+    for index_key, index_symbol in INDICES.items():
         print(f"\nProcessing {index_key}...")
-        metrics = calculate_metrics(index_name, index_key.replace('_', ' '))
+        metrics = calculate_metrics(index_symbol, index_key.replace('_', ' '))
         message = format_message(metrics)
         all_messages.append(message)
     
