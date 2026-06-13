@@ -1,16 +1,13 @@
 """
 Market metrics calculator for Indian indices
-Calculates: 200 DMA, 50 DMA, 52 Week High, and % differences
+Uses direct HTTP requests to NSE India API
 For: NIFTY50, Nifty Next50, Nifty Midcap 150
-Uses nsepython for reliable NSE India data
 """
 
 import requests
 import json
 import os
-from datetime import datetime, timedelta
-import pandas as pd
-from io import StringIO
+from datetime import datetime
 
 # NSE India index symbols
 INDICES = {
@@ -22,7 +19,7 @@ INDICES = {
 
 def fetch_nse_index_data(index_name):
     """
-    Fetch NSE index data using NSE India's unofficial API
+    Fetch NSE index data using NSE India's API
     
     Args:
         index_name (str): Index name (e.g., "NIFTY 50")
@@ -33,18 +30,19 @@ def fetch_nse_index_data(index_name):
     try:
         print(f"Fetching data for {index_name}...")
         
-        # NSE India API endpoint for index data
-        url = f"https://www.nseindia.com/api/index-data"
+        # NSE India API endpoint
+        url = "https://www.nseindia.com/api/index-data"
         
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
         params = {
             'index': index_name
         }
         
-        response = requests.get(url, headers=headers, params=params, timeout=10)
+        # Make request with timeout
+        response = requests.get(url, headers=headers, params=params, timeout=15)
         response.raise_for_status()
         
         data = response.json()
@@ -53,45 +51,26 @@ def fetch_nse_index_data(index_name):
             print(f"✓ Successfully fetched {index_name}")
             return data['data'][0]
         else:
+            print(f"⚠ No data returned for {index_name}")
             return {"error": f"No data found for {index_name}"}
     
+    except requests.exceptions.Timeout:
+        print(f"✗ Timeout fetching {index_name}")
+        return {"error": f"Request timeout for {index_name}"}
+    except requests.exceptions.ConnectionError:
+        print(f"✗ Connection error for {index_name}")
+        return {"error": f"Connection error for {index_name}"}
+    except json.JSONDecodeError:
+        print(f"✗ Invalid JSON response for {index_name}")
+        return {"error": f"Invalid response for {index_name}"}
     except Exception as e:
         print(f"✗ Error for {index_name}: {str(e)}")
         return {"error": str(e)}
 
 
-def fetch_nse_historical_data(index_symbol):
+def calculate_metrics(index_name, index_display_name):
     """
-    Fetch historical data for NSE index
-    
-    Args:
-        index_symbol (str): Index symbol (e.g., "NIFTY 50")
-        
-    Returns:
-        list: Historical data points
-    """
-    try:
-        # Using nsepython library to get historical data
-        from nsepython import nsefetch
-        
-        print(f"Fetching historical data for {index_symbol}...")
-        
-        # Get data for last 1 year
-        data = nsefetch(
-            f"https://www.nseindia.com/api/historical/cm/equity/shares/csv/{index_symbol.lower().replace(' ', '%20')}",
-            user_agent="Mozilla/5.0"
-        )
-        
-        return data
-    
-    except Exception as e:
-        print(f"⚠ Error fetching historical data: {str(e)}")
-        return None
-
-
-def calculate_metrics_from_api(index_name, index_display_name):
-    """
-    Calculate metrics for NSE index using live API data
+    Calculate metrics for NSE index using API data
     
     Args:
         index_name (str): Index name for API
@@ -107,32 +86,46 @@ def calculate_metrics_from_api(index_name, index_display_name):
         if "error" in index_data:
             return {"error": index_data["error"], "ticker": index_display_name}
         
-        # Extract current price
+        # Extract metrics from API response
+        metrics = {
+            "ticker": index_display_name,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S IST"),
+        }
+        
+        # Current price
         if 'lastPrice' in index_data:
-            current_price = float(index_data['lastPrice'])
+            metrics["current_price"] = float(index_data['lastPrice'])
         else:
             return {"error": "Could not extract price", "ticker": index_display_name}
         
-        # NSE API provides some metrics
-        # We'll use available data and fetch historical for moving averages
-        metrics = {
-            "ticker": index_display_name,
-            "current_price": round(current_price, 2),
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S IST"),
-            "raw_data": index_data
-        }
-        
-        # Try to extract 52-week high and other metrics if available
+        # 52-week high
         if 'week52High' in index_data:
-            metrics["week_52_high"] = round(float(index_data['week52High']), 2)
+            metrics["week_52_high"] = float(index_data['week52High'])
         
+        # 52-week low
         if 'week52Low' in index_data:
-            metrics["week_52_low"] = round(float(index_data['week52Low']), 2)
+            metrics["week_52_low"] = float(index_data['week52Low'])
         
-        # Calculate percentage difference from 52-week high if available
-        if 'week_52_high' in metrics:
-            pct_diff = ((current_price - metrics['week_52_high']) / metrics['week_52_high']) * 100
-            metrics['pct_diff_52w_high'] = round(pct_diff, 2)
+        # Today's high
+        if 'highPrice' in index_data:
+            metrics["today_high"] = float(index_data['highPrice'])
+        
+        # Today's low
+        if 'lowPrice' in index_data:
+            metrics["today_low"] = float(index_data['lowPrice'])
+        
+        # Percentage change
+        if 'perChange' in index_data:
+            metrics["pct_change"] = float(index_data['perChange'])
+        
+        # Open price
+        if 'openPrice' in index_data:
+            metrics["open_price"] = float(index_data['openPrice'])
+        
+        # Calculate percentage from 52-week high
+        if 'current_price' in metrics and 'week_52_high' in metrics:
+            pct_diff = ((metrics['current_price'] - metrics['week_52_high']) / metrics['week_52_high']) * 100
+            metrics['pct_from_52w_high'] = round(pct_diff, 2)
         
         return metrics
     
@@ -155,37 +148,40 @@ def format_message(metrics):
         return f"❌ Error analyzing {metrics.get('ticker', 'Unknown')}: {metrics['error']}"
     
     # Build message with available data
-    message_parts = [
-        f"📊 Market Alert - {metrics['ticker']}",
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"💰 Current Price: {metrics['current_price']}"
+    lines = [
+        f"📊 {metrics['ticker']}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━"
     ]
     
+    if 'current_price' in metrics:
+        lines.append(f"💰 Current: {metrics['current_price']:.2f}")
+    
+    if 'open_price' in metrics:
+        lines.append(f"📍 Open: {metrics['open_price']:.2f}")
+    
+    if 'today_high' in metrics and 'today_low' in metrics:
+        lines.append(f"📈 High/Low: {metrics['today_high']:.2f} / {metrics['today_low']:.2f}")
+    
+    if 'pct_change' in metrics:
+        change = metrics['pct_change']
+        emoji = "🟢" if change >= 0 else "🔴"
+        lines.append(f"{emoji} Change: {change:+.2f}%")
+    
     if 'week_52_high' in metrics:
-        message_parts.append(f"🎯 52-Week High: {metrics['week_52_high']}")
+        lines.append(f"🎯 52W High: {metrics['week_52_high']:.2f}")
     
     if 'week_52_low' in metrics:
-        message_parts.append(f"📉 52-Week Low: {metrics['week_52_low']}")
+        lines.append(f"📉 52W Low: {metrics['week_52_low']:.2f}")
     
-    if 'pct_diff_52w_high' in metrics:
-        message_parts.append(f"📊 vs 52W High: {metrics['pct_diff_52w_high']:+.2f}%")
+    if 'pct_from_52w_high' in metrics:
+        lines.append(f"📊 vs 52W High: {metrics['pct_from_52w_high']:+.2f}%")
     
-    # Add raw data if available
-    if 'raw_data' in metrics:
-        raw = metrics['raw_data']
-        if 'perChange' in raw:
-            message_parts.append(f"📈 Change: {raw['perChange']}%")
-        if 'highPrice' in raw:
-            message_parts.append(f"📊 Today's High: {raw['highPrice']}")
-        if 'lowPrice' in raw:
-            message_parts.append(f"📊 Today's Low: {raw['lowPrice']}")
-    
-    message_parts.extend([
-        f"⏰ Updated: {metrics['timestamp']}",
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    lines.extend([
+        "━━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"⏰ {metrics['timestamp']}"
     ])
     
-    return "\n".join(message_parts)
+    return "\n".join(lines)
 
 
 def send_telegram_message(message, bot_token, chat_id):
@@ -233,14 +229,15 @@ def main():
     print("=" * 50)
     
     all_messages = [
-        "🚀 Indian Market Alerts Report\n",
-        f"📅 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')}\n"
+        "🚀 Indian Market Alerts Report",
+        f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')}",
+        ""
     ]
     
     # Process each Indian index
     for index_key, index_name in INDICES.items():
         print(f"\nProcessing {index_key}...")
-        metrics = calculate_metrics_from_api(index_name, index_key.replace('_', ' '))
+        metrics = calculate_metrics(index_name, index_key.replace('_', ' '))
         message = format_message(metrics)
         all_messages.append(message)
     
