@@ -10,6 +10,10 @@ import requests
 import json
 import os
 
+session = requests.Session()
+session.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+})
 # Indian index tickers on Yahoo Finance
 INDICES = {
     "NIFTY50": "^NSEI",
@@ -34,7 +38,7 @@ def calculate_metrics(ticker_symbol, ticker_name, days_lookback=252):
         print(f"Fetching data for {ticker_name} ({ticker_symbol})...")
         
         # Fetch historical data
-        stock = yf.Ticker(ticker_symbol)
+        stock = yf.Ticker(ticker_symbol,session=session)
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days_lookback)
         
