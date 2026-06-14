@@ -16,9 +16,9 @@ session.headers.update({
 })
 # Indian index tickers on Yahoo Finance
 INDICES = {
-    "NIFTY50": "nifty50.ns"#,
-   # "NIFTY_NEXT50": "^NSMIDCP",
-   # "NIFTY_MIDCAP150": "NIFTYMIDCAP150.NS"
+    "NIFTY50": "^NSEI",
+    "NIFTY_NEXT50": "^NIFNXT50",
+    "NIFTY_MIDCAP150": "^NIFMC150"
 }
 
 
@@ -45,7 +45,7 @@ def calculate_metrics(ticker_symbol, ticker_name, days_lookback=252):
         # Download with retries (removed progress parameter)
         hist = stock.history(start=start_date, end=end_date)
         
-        if hist.empty or len(hist) == 0:
+        if hist.empty :#or len(hist) == 0
             return {"error": f"No data found for {ticker_name}", "ticker": ticker_name}
         
         current_price = hist['Close'].iloc[-1]
