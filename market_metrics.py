@@ -46,7 +46,7 @@ def calculate_metrics(ticker_symbol, ticker_name, days_lookback=252):
         hist = stock.history(start=start_date, end=end_date)
         
         if hist.empty :#or len(hist) == 0
-            return {"error": f"No data found for {ticker_name}", "ticker": ticker_name}
+            return {"error": f"No data found for {ticker_name} and {hist.empty} and {len(hist)}", "ticker": ticker_name}
         
         current_price = hist['Close'].iloc[-1]
         
