@@ -1,0 +1,16 @@
+name: Cron Test
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Every 5 minutes
+  workflow_dispatch:        # Allow manual trigger too
+
+jobs:
+  test-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print UTC time
+        run: date -u
+
+      - name: Print IST time
+        run: TZ=Asia/Kolkata date
